@@ -1,21 +1,16 @@
-# EduRAG Learning Path (Assignment-15)
+# HUDCO Document Management System Task
 
-A complete **RAG system** that creates **personalized learning paths** by retrieving and organizing educational content based on **student level**, **learning style**, and **progress tracking**. It satisfies the requirements in the assignment brief (educational content processing, personalized path generation, progress tracking, learning style accommodation, competency-based sequencing, adaptive difficulty, knowledge-gap remediation, evaluation, and a working demo via Streamlit).
 
 ## 🚀 Features (Mapped to Requirements)
-- **Educational content processing & categorization**: Ingest PDFs/Markdown/Text/URLs, chunk & tag resources by topic/type/difficulty.
+- **Content processing & categorization**: Ingest PDFs/Markdown/Text/URLs, chunk & tag resources by topic/type/difficulty.
 - **Retrieval with Vector DB**: Uses **Chroma** + **Sentence-Transformers** (default) or **OpenAI embeddings** (optional).
-- **Context-aware generation**: Answer questions with retrieved context using **FLAN-T5** (local) or **OpenAI GPT** (optional).
-- **Personalized learning paths**: VARK-style **learning-style** detection + **competency graph** → sequenced plan per student level.
-- **Student progress tracking**: SQLite DB stores progress, quiz results, mastery estimates, and adapts next steps.
-- **Difficulty adaptation**: EWMA-based mastery & item difficulty to up/down-shift recommended content.
-- **Knowledge gap remediation**: Detect weak competencies; inject targeted remedial resources.
-- **Evaluation**: Simple retrieval metrics (`precision@k`, `recall@k`, latency); optional RAGAS scaffold.
-- **UX**: Streamlit app with tabs: Ingest, Student Profile, Learning Style Quiz, Plan, Learn/Chat, Progress, Evaluate.
+- **Context-aware generation**: Answer questions with retrieved context using **FLAN-T5** (local) .
+-
+- **UX**: Streamlit app with tabs: Ingest and Chat With PDFs.
 
 ## 🧩 Project Structure
 ```
-EduRAG-LearningPath/
+RAG-Application_Main/
 ├─ app.py                      # Streamlit UI (demo)
 ├─ requirements.txt
 ├─ .env.example                # Put OPENAI_API_KEY here if you want OpenAI
@@ -26,14 +21,6 @@ EduRAG-LearningPath/
 │  ├─ vectorstore.py           # Chroma wrapper
 │  ├─ retriever.py             # Top-k semantic retrieval
 │  ├─ generator.py             # OpenAI or FLAN-T5 small text generation
-├─ personalization/
-│  ├─ learning_styles.py       # VARK quiz & scoring
-│  ├─ path_planner.py          # Competency-based sequencing & adaptation
-│  ├─ progress.py              # SQLite models and utilities
-│  ├─ quiz.py                  # Simple quiz creation & grading
-├─ evaluation/
-│  ├─ eval_rag.py              # Basic eval (P@k, R@k, latency) + scaffold for RAGAS
-│  └─ sample_eval.csv          # Sample qrels-like annotations
 ├─ data/
 │  └─ sample/
 │     ├─ content/python_intro.txt
@@ -77,7 +64,7 @@ EduRAG-LearningPath/
 ## 📦 Notes
 - Default models are light-weight and can run on CPU.
 - FLAN-T5 small is used for local generation (downloads at first run). For higher quality, switch to OpenAI in the sidebar.
-- This demo is domain-configured for **Education → Python Basics** but you can replace the sample content with your own domain data.
+- This demo is domain-configured for **HUDCO → Python Basics** but you can replace the sample content with your own domain data.
 
 
 ## 🔑 Using Gemini (Google Generative AI)
