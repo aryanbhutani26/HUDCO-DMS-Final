@@ -50,29 +50,34 @@ default_style_bias_weight = float(CFG["defaults"].get("style_bias_weight", 0.3))
 # =========================
 # Sidebar settings (Gemini defaults)
 # =========================
-st.sidebar.title("⚙️ Settings")
+# st.sidebar.title("⚙️ Settings")
 
-provider_embed = st.sidebar.selectbox(
-    "Embedding provider",
-    ["Gemini"],
-    index=0  # Gemini by default
-)
+# provider_embed = st.sidebar.selectbox(
+#     "Embedding provider",
+#     ["Gemini"],
+#     index=0  # Gemini by default
+# )
 
-embed_model = st.sidebar.text_input(
-    "Embedding model",
-    value=(
-        "models/text-embedding-004" if provider_embed == "Gemini"
-        else (CFG["defaults"]["embedder"] if provider_embed == "sentence-transformers"
-              else "text-embedding-3-small")
-    ),
-    help="For Gemini, use models/text-embedding-004"
-)
+# embed_model = st.sidebar.text_input(
+#     "Embedding model",
+#     value=(
+#         "models/text-embedding-004" if provider_embed == "Gemini"
+#         else (CFG["defaults"]["embedder"] if provider_embed == "sentence-transformers"
+#               else "text-embedding-3-small")
+#     ),
+#     help="For Gemini, use models/text-embedding-004"
+# )
 
-provider_gen = st.sidebar.selectbox(
-    "Generator",
-    ["Gemini"],
-    index=0  # Gemini by default
-)
+# provider_gen = st.sidebar.selectbox(
+#     "Generator",
+#     ["Gemini"],
+#     index=0  # Gemini by default
+# )
+
+provider_embed = "Gemini"
+embed_model = "models/text-embedding-004"
+provider_gen = "Gemini"
+
 
 # style_bias_weight = st.sidebar.slider("Style Bias Weight", 0.0, 1.0, default_style_bias_weight)
 
@@ -276,7 +281,7 @@ Documents:
 # =========================
 # UI Tabs
 # =========================
-st.title("HUDCO Document Management System  Demo (Gemini)")
+st.title("HUDCO Document Management System")
 
 tab_ingest, tab_learn = st.tabs(
     ["Ingest", "Chat With Ingested Files"]
