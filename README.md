@@ -1,75 +1,128 @@
-# HUDCO Document Management System Task
+# HUDCO Document Management System
 
+A comprehensive RAG (Retrieval-Augmented Generation) system with role-based access control for document management and intelligent Q&A.
 
-## 🚀 Features (Mapped to Requirements)
-- **Content processing & categorization**: Ingest PDFs/Markdown/Text/URLs, chunk & tag resources by topic/type/difficulty.
-- **Retrieval with Vector DB**: Uses **Chroma** + **Sentence-Transformers** (default) or **OpenAI embeddings** (optional).
-- **Context-aware generation**: Answer questions with retrieved context using **FLAN-T5** (local) .
--
-- **UX**: Streamlit app with tabs: Ingest and Chat With PDFs.
+## 🚀 Key Features
+- **Role-Based Access Control**: Admin and User roles with different permissions
+- **Document Management**: Upload, index, and manage PDF/TXT/MD files
+- **Intelligent Q&A**: Chat with documents using Gemini AI
+- **Vector Search**: Semantic search using Chroma DB and embeddings
+- **User-Friendly Interface**: Clean Streamlit web interface
+- **Document Tracking**: Track upload status, indexing, and metadata
 
-## 🧩 Project Structure
+## 🏗️ System Architecture
+
+### User Roles
+- **Admin**: Upload documents, manage document library, chat with documents
+- **User**: View available documents, chat with indexed documents
+
+### Core Components
+- **Authentication System**: Simple login with SQLite user management
+- **Document Manager**: File upload, storage, and indexing tracking
+- **RAG Pipeline**: Document chunking, embedding, and retrieval
+- **AI Integration**: Gemini AI for intelligent responses
+
+## 📁 Project Structure
 ```
-RAG-Application_Main/
-├─ app.py                      # Streamlit UI (demo)
-├─ requirements.txt
-├─ .env.example                # Put OPENAI_API_KEY here if you want OpenAI
-├─ config.yaml                 # Competency graph + domain settings
-├─ rag/
-│  ├─ ingest.py                # Load, chunk, tag, and persist to Chroma
-│  ├─ embeddings.py            # OpenAI or HF Sentence-Transformers
-│  ├─ vectorstore.py           # Chroma wrapper
-│  ├─ retriever.py             # Top-k semantic retrieval
-│  ├─ generator.py             # OpenAI or FLAN-T5 small text generation
-├─ data/
-│  └─ sample/
-│     ├─ content/python_intro.txt
-│     ├─ content/python_control_flow.txt
-│     ├─ content/python_functions.txt
-│     └─ links.json           # Example YouTube/article links by topic
-└─ deploy/
-   └─ spaces/README.md         # Hugging Face Spaces deploy steps
+HUDCO-Document-Management/
+├─ app.py                      # Main Streamlit application
+├─ auth.py                     # Authentication system
+├─ document_manager.py         # Document management logic
+├─ demo_setup.py              # Demo data setup script
+├─ requirements.txt           # Python dependencies
+├─ config.yaml               # System configuration
+├─ rag/                      # RAG implementation
+│  ├─ ingest.py             # Document processing
+│  ├─ embeddings.py         # Embedding generation
+│  ├─ vectorstore.py        # Vector database interface
+│  ├─ retriever.py          # Semantic search
+│  └─ generator.py          # AI response generation
+├─ data/sample/content/      # Sample documents
+├─ uploaded_docs/           # User uploaded files
+└─ .chroma/                # Vector database storage
 ```
 
-## 🛠️ Setup (Local)
-1. **Python** 3.10+ recommended. Create a venv and install deps:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate        # Windows: .venv\Scripts\activate
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-2. (Optional) **OpenAI**: copy `.env.example` → `.env` and set `OPENAI_API_KEY=...`.
-3. **Run the demo**:
-   ```bash
-   streamlit run app.py
-   ```
-4. Open the local URL (shown in terminal). Use the **Ingest** tab to index sample content or upload your own.
+## 🛠️ Quick Start
 
-## ☁️ 1-Click Deploy (Hugging Face Spaces)
-- Create a new Space (**Streamlit**).
-- Upload the repository files.
-- In **Settings → Secrets**, add `OPENAI_API_KEY` if using OpenAI.
-- Spaces will auto-install from `requirements.txt` and launch `app.py`.
+### 1. Environment Setup
+```bash
+# Clone and navigate to project
+cd HUDCO-Document-Management
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Configure API Keys
+Create a `.env` file:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+### 3. Initialize Demo Data
+```bash
+python demo_setup.py
+```
+
+### 4. Run the Application
+```bash
+streamlit run app.py
+```
+
+### 5. Login Credentials
+- **Admin**: `admin` / `admin123`
+- **Demo User**: `demo_user` / `password123`
+
+## 💼 Usage Workflows
+
+### Admin Workflow
+1. **Login** as admin
+2. **Upload Documents**: Use "Upload Documents" tab to add PDF/TXT/MD files
+3. **Manage Library**: View, re-index, or delete documents in "Manage Documents"
+4. **Chat**: Ask questions about any uploaded document
+
+### User Workflow
+1. **Login** as regular user
+2. **Browse Documents**: View available indexed documents
+3. **Select & Chat**: Choose specific documents to chat with
+4. **Get Answers**: Ask questions and receive AI-powered responses
 
 ## 🔧 Configuration
-- Edit `config.yaml` to define competencies, prerequisites, and default difficulty per competency.
-- Vector store persistence is under `.chroma/` (created at runtime).
 
-## 🧪 Evaluation
-- Use **Evaluate** tab to compute `precision@k` and `recall@k` on `evaluation/sample_eval.csv`.
-- Add your own annotations (query, relevant_doc_ids list) to grow the eval set.
-- Optional RAGAS scaffold included in code comments.
+### System Settings (`config.yaml`)
+```yaml
+defaults:
+  top_k: 4                    # Number of chunks to retrieve
+  chunk_size: 800            # Document chunk size
+  chunk_overlap: 120         # Overlap between chunks
+  vector_persist_dir: ".chroma"  # Vector database location
+```
 
-## 📦 Notes
-- Default models are light-weight and can run on CPU.
-- FLAN-T5 small is used for local generation (downloads at first run). For higher quality, switch to OpenAI in the sidebar.
-- This demo is domain-configured for **HUDCO → Python Basics** but you can replace the sample content with your own domain data.
+### Supported File Types
+- **PDF**: Automatically extracted using PyPDF2
+- **TXT**: Plain text files
+- **MD**: Markdown files
 
+## 🚀 Deployment
 
-## 🔑 Using Gemini (Google Generative AI)
-- Install deps (already in `requirements.txt`): `google-generativeai`
-- Copy `.env.example` → `.env` and set `GEMINI_API_KEY=...`
-- In the Streamlit sidebar, choose:
-  - **Embedding provider** → `gemini` (model default: `text-embedding-004`)
-  - **Generator** → `gemini` (model default: `gemini-1.5-flash`)
+### Local Development
+```bash
+streamlit run app.py
+```
+
+### Production Deployment
+1. Set up environment variables
+2. Configure proper database paths
+3. Use production WSGI server
+4. Set up proper authentication
+
+## 🔐 Security Features
+- Password hashing using SHA-256
+- Role-based access control
+- File upload validation
+- Secure file storage

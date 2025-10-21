@@ -33,36 +33,46 @@ def _kill_chroma_telemetry():
     except Exception:
         pass
 
-def get_all(self):
-    """Return all docs & metadatas currently in the collection (0.5.x-safe)."""
-    try:
-        return self.collection.get(include=["documents", "metadatas"])
-    except TypeError:
-        return self.collection.get()
-
-
-
 _kill_chroma_telemetry()
 
 class VectorStore:
     def __init__(self, persist_dir: str):
-        # Prefer the 0.5.x PersistentClient if available
-        client = None
-        try:
-            # 0.5.x
-            client = chromadb.PersistentClient(path=persist_dir, settings=Settings(anonymized_telemetry=False))
-        except Exception:
-            # Fallback for some builds
-            client = chromadb.Client(
-                Settings(
-                    chroma_db_impl="duckdb+parquet",
-                    persist_directory=persist_dir,
-                    anonymized_telemetry=False,
-                )
-            )
-        self.client = client
         _kill_chroma_telemetry()
-        self.collection = self.client.get_or_create_collection("edu_rag")
+        
+        # Create settings with telemetry disabled
+        settings = Settings(
+            anonymized_telemetry=False,
+            allow_reset=True
+        )
+        
+        # Initialize client
+        try:
+            self.client = chromadb.PersistentClient(path=persist_dir, settings=settings)
+        except Exception as e:
+            print(f"Failed to create PersistentClient: {e}")
+            # Fallback to in-memory client for testing
+            self.client = chromadb.Client(settings)
+        
+        _kill_chroma_telemetry()
+        
+        # Create or get collection with simple name
+        collection_name = "hudco_docs"
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name=collection_name,
+                metadata={"description": "HUDCO document embeddings"}
+            )
+        except Exception as e:
+            print(f"Error creating collection: {e}")
+            # Try to delete and recreate if there's a schema issue
+            try:
+                self.client.delete_collection(collection_name)
+            except:
+                pass
+            self.collection = self.client.create_collection(
+                name=collection_name,
+                metadata={"description": "HUDCO document embeddings"}
+            )
 
     def add(self, ids: List[str], embeddings: List[List[float]], metadatas: List[Dict[str, Any]], documents: List[str]):
         self.collection.add(ids=ids, embeddings=embeddings, metadatas=metadatas, documents=documents)
@@ -72,7 +82,21 @@ class VectorStore:
         return self.collection.query(query_embeddings=[query_embedding], n_results=top_k)
 
     def reset(self):
-        self.client.delete_collection("edu_rag")
-        self.collection = self.client.get_or_create_collection("edu_rag")
+        collection_name = "hudco_docs"
+        try:
+            self.client.delete_collection(collection_name)
+        except:
+            pass
+        self.collection = self.client.create_collection(
+            name=collection_name,
+            metadata={"description": "HUDCO document embeddings"}
+        )
+    
+    def get_all(self):
+        """Return all docs & metadatas currently in the collection."""
+        try:
+            return self.collection.get(include=["documents", "metadatas"])
+        except TypeError:
+            return self.collection.get()
     
     

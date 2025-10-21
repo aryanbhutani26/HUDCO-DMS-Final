@@ -27,10 +27,10 @@ class Generator:
         if self.provider == "gemini":
             import google.generativeai as genai
             genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-            raw = os.getenv("GEMINI_CHAT_MODEL", "models/gemini-1.5-flash")
+            raw = os.getenv("GEMINI_CHAT_MODEL", "gemini-1.5-flash")
             model_name = _normalize_gemini_model(raw)
-            # Attach the system prompt as system_instruction so user prompts stay clean
-            self.model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT)
+            # Create model without system_instruction for compatibility
+            self.model = genai.GenerativeModel(model_name)
 
         elif self.provider == "openai":
             from openai import OpenAI
@@ -45,16 +45,13 @@ class Generator:
     def generate(self, question: str, docs: List[str], metas: List[Dict], max_tokens: int = 256) -> str:
         ctx = format_context(docs, metas)
 
-        user_prompt = (
-            "Use the following context to answer the question. "
-            "Be concise (5–8 sentences) and include short bullet points when useful.\n\n"
-            f"Context:\n{ctx}\n\nQuestion: {question}\n"
-        )
+        # Combine system prompt with user prompt for Gemini
+        full_prompt = f"{SYSTEM_PROMPT}\n\n{ctx}\n\nQuestion: {question}\n\nAnswer:"
 
         if self.provider == "gemini":
             try:
                 resp = self.model.generate_content(
-                    user_prompt,
+                    full_prompt,
                     generation_config={"max_output_tokens": max_tokens, "temperature": 0.2}
                 )
                 # Prefer .text; fall back to stitching parts

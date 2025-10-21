@@ -7,7 +7,7 @@ os.environ["ANONYMIZED_TELEMETRY"] = "FALSE"       # legacy key some builds chec
 os.environ["OTEL_SDK_DISABLED"] = "true"           # turn off OpenTelemetry
 os.environ["POSTHOG_DISABLED"] = "true"            # extra safety for telemetry libs
 os.environ["PH_DISABLED"] = "true"                 # some libs read this too
-os.environ.setdefault("GEMINI_CHAT_MODEL", "models/gemini-1.5-flash")
+os.environ.setdefault("GEMINI_CHAT_MODEL", "models/gemini-2.0-flash")
 logging.getLogger("chromadb").setLevel(logging.ERROR)
 logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 
@@ -15,6 +15,7 @@ logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 # Standard imports
 # =========================
 import json
+import uuid
 from pathlib import Path
 import re
 
@@ -27,16 +28,18 @@ from rag.vectorstore import VectorStore
 from rag.ingest import prepare_documents, load_and_chunk
 from rag.retriever import Retriever
 from rag.generator import Generator
-from personalization.learning_styles import QUESTIONS, score, primary_style
-from personalization.progress import DB
-from personalization.path_planner import plan
-from personalization.quiz import generate_quiz, grade_quiz
+from auth import require_auth, logout
+from document_manager import DocumentManager
 
 # =========================
 # App bootstrapping
 # =========================
 load_dotenv()
-st.set_page_config(page_title="HUDCO Document Management System", page_icon="📚", layout="wide")
+st.set_page_config(page_title="HUDCO Document Management System", page_icon="🫸", layout="wide")
+
+# Authentication check
+if not require_auth():
+    st.stop()
 
 CFG_PATH = "config.yaml"
 CFG = yaml.safe_load(open(CFG_PATH, "r", encoding="utf-8"))
@@ -45,54 +48,22 @@ persist_dir = CFG["defaults"]["vector_persist_dir"]
 chunk_size = CFG["defaults"]["chunk_size"]
 overlap = CFG["defaults"]["chunk_overlap"]
 top_k = CFG["defaults"]["top_k"]
-default_style_bias_weight = float(CFG["defaults"].get("style_bias_weight", 0.3))
-
-# =========================
-# Sidebar settings (Gemini defaults)
-# =========================
-# st.sidebar.title("⚙️ Settings")
-
-# provider_embed = st.sidebar.selectbox(
-#     "Embedding provider",
-#     ["Gemini"],
-#     index=0  # Gemini by default
-# )
-
-# embed_model = st.sidebar.text_input(
-#     "Embedding model",
-#     value=(
-#         "models/text-embedding-004" if provider_embed == "Gemini"
-#         else (CFG["defaults"]["embedder"] if provider_embed == "sentence-transformers"
-#               else "text-embedding-3-small")
-#     ),
-#     help="For Gemini, use models/text-embedding-004"
-# )
-
-# provider_gen = st.sidebar.selectbox(
-#     "Generator",
-#     ["Gemini"],
-#     index=0  # Gemini by default
-# )
 
 provider_embed = "Gemini"
 embed_model = "models/text-embedding-004"
 provider_gen = "Gemini"
-
-
-# style_bias_weight = st.sidebar.slider("Style Bias Weight", 0.0, 1.0, default_style_bias_weight)
 
 if provider_embed == "Gemini" or provider_gen == "Gemini":
     if not os.getenv("GEMINI_API_KEY"):
         st.sidebar.warning("GEMINI_API_KEY is not set in your environment (.env).")
 
 # =========================
-# Core services (embedder, vector store, retriever, DB)
-# NOTE: Do NOT instantiate Generator here (we lazy-load on click)
+# Core services
 # =========================
 embedder = Embedder(EmbedConfig(provider=provider_embed, model=embed_model))
 vs = VectorStore(persist_dir=persist_dir)
 retriever = Retriever(vs, embedder, top_k=top_k)
-db = DB(Path("progress.db"))
+doc_manager = DocumentManager()
 
 # =========================
 # Helpers
@@ -146,7 +117,7 @@ def generate_quiz_dynamic(comp_id: str, n: int = 4, top_k: int = 4):
         raise RuntimeError("GEMINI_API_KEY not set")
     genai.configure(api_key=gen_key)
 
-    model_name = _normalize_gemini_model(os.getenv("GEMINI_CHAT_MODEL", "models/gemini-1.5-flash"))
+    model_name = _normalize_gemini_model(os.getenv("GEMINI_CHAT_MODEL", "models/gemini-2.0-flash"))
     model = genai.GenerativeModel(model_name)
 
     prompt = f"""
@@ -227,7 +198,7 @@ def build_plan_from_index(
         raise RuntimeError("GEMINI_API_KEY not set")
 
     genai.configure(api_key=gem_key)
-    raw_model = gemini_model_name or os.getenv("GEMINI_CHAT_MODEL", "models/gemini-1.5-flash")
+    raw_model = gemini_model_name or os.getenv("GEMINI_CHAT_MODEL", "models/gemini-2.0-flash")
     model_name = _normalize_gemini_model(raw_model)
     model = genai.GenerativeModel(model_name)
 
@@ -279,113 +250,262 @@ Documents:
     return comps
 
 # =========================
-# UI Tabs
+# UI Header
 # =========================
-st.title("HUDCO Document Management System")
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.title("📚 HUDCO Document Management System")
+    st.caption(f"Welcome, {st.session_state.username} ({st.session_state.user_role})")
 
-tab_ingest, tab_learn = st.tabs(
-    ["Ingest", "Chat With Ingested Files"]
-)
+with col2:
+    if st.button("🚪 Logout", type="secondary"):
+        logout()
 
-# ---------------------------
-# Ingest Tab
-# ---------------------------
-with tab_ingest:
-    st.subheader("Ingest Your Files")
-    st.write("Upload `.pdf`, `.txt`, or `.md` files. Or index the included sample content.")
 
-    uploaded = st.file_uploader("Upload files", type=["pdf", "txt", "md"], accept_multiple_files=True)
 
-    if st.button("Index Uploaded Files") and uploaded:
-        paths = []
-        temp_dir = Path("uploaded")
-        temp_dir.mkdir(exist_ok=True)
-        for f in uploaded:
-            p = temp_dir / f.name
-            p.write_bytes(f.read())
-            paths.append(p)
+# =========================
+# Interface Functions
+# =========================
 
-        docs = load_and_chunk(paths, chunk_size, overlap)
-        texts = [d[0] for d in docs]
-        metas = [d[1] for d in docs]
-        ids = [f"{m['source']}::{i}" for i, m in enumerate(metas)]
-
-        embs = embedder.embed(texts)
-        vs.add(ids, embs, metas, texts)
-        st.success(f"Ingested {len(texts)} chunks from {len(paths)} files.")
-
-    if st.button("Index Sample Content"):
-        content_dir = Path("data/sample/content")
-        paths = prepare_documents(content_dir)
-        docs = load_and_chunk(paths, chunk_size, overlap)
-        texts = [d[0] for d in docs]
-        metas = [d[1] for d in docs]
-
-        def nice_id(m, i):
-            src = Path(m['source']).name.replace(".pdf", "").replace(".txt", "").replace(".md", "")
-            return f"{src}.txt::{i}"
-
-        ids = [nice_id(m, i) for i, m in enumerate(metas)]
-        embs = embedder.embed(texts)
-        vs.add(ids, embs, metas, texts)
-        st.success(f"Ingested {len(texts)} chunks from sample content.")
-
-    if st.button("Reset Vector Store"):
-        vs.reset()
-        st.warning("Vector store cleared.")
-# ---------------------------
-# Learn / Chat Tab
-# ---------------------------
-with tab_learn:
-    st.subheader("Learn / Chat with RAG")
-    name4 = st.text_input("Name", value="HUDCO", key="chat_name")
-    user = db.get_user(name4)
-    query = st.text_input("Ask a question")
-
-    if st.button("Retrieve & Answer") and query:
-        # Lazy-load the generator at click time so no HF models initialize early
-        generator = Generator(provider=provider_gen)
-
-        # Retrieve
-        res = retriever.retrieve(query)
-        docs = res.get("documents", [[]])[0]
-        metas = res.get("metadatas", [[]])[0]
-        ids = res.get("ids", [[]])[0]
-
-        # Simple style-aware re-ranking (demo only)
-        sty = user["style"] if user else "Unknown"
-
-        def style_score(meta):
-            src = meta.get("source", "")
-            if sty == "Visual" and ("png" in src or "jpg" in src or "mp4" in src or "video" in src):
-                return 1
-            if sty == "Auditory" and ("mp3" in src or "podcast" in src or "video" in src):
-                return 1
-            if sty == "Read/Write" and (src.endswith(".txt") or src.endswith(".md") or src.endswith(".pdf")):
-                return 1
-            if sty == "Kinesthetic":
-                return 0.2
-            return 0
-
-        if metas:
-            pairs = list(zip(docs, metas, ids))
-            # Light re-rank by style (you can scale by style_bias_weight if you like)
-            pairs.sort(key=lambda x: style_score(x[1]), reverse=True)
-            docs, metas, ids = zip(*pairs)
-
-        # Generate answer
-        answer = generator.generate(query, list(docs), list(metas))
-        st.markdown("**Answer**")
-        st.write(answer)
-        with st.expander("Sources"):
-            for m in metas:
-                st.write(m.get("source"))
+def admin_upload_interface():
+    """Admin interface for uploading and indexing documents"""
+    st.subheader("📤 Upload & Index Documents")
+    
+    uploaded_files = st.file_uploader(
+        "Choose files to upload", 
+        type=["pdf", "txt", "md"], 
+        accept_multiple_files=True,
+        help="Upload PDF, TXT, or MD files"
+    )
+    
+    description = st.text_area("Description (optional)", placeholder="Brief description of the documents...")
+    
+    if uploaded_files and st.button("Upload & Index Documents", type="primary"):
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
-    if st.button("Open Gemini in Browser"):
-        st.markdown(
-            """
-            <meta http-equiv="refresh" content="0; url='https://gemini.google.com/'">
-            """,
-            unsafe_allow_html=True
-        )
+        for i, uploaded_file in enumerate(uploaded_files):
+            status_text.text(f"Processing {uploaded_file.name}...")
+            
+            # Save file
+            file_id = str(uuid.uuid4())
+            file_extension = Path(uploaded_file.name).suffix
+            filename = f"{file_id}{file_extension}"
+            file_path = doc_manager.upload_dir / filename
+            
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.read())
+            
+            # Add to database
+            doc_id = doc_manager.add_document(
+                filename=filename,
+                original_name=uploaded_file.name,
+                file_path=str(file_path),
+                file_type=file_extension.lstrip('.'),
+                file_size=uploaded_file.size,
+                uploaded_by=st.session_state.username,
+                description=description
+            )
+            
+            # Index the document
+            try:
+                docs = load_and_chunk([file_path], chunk_size, overlap)
+                texts = [d[0] for d in docs]
+                metas = [d[1] for d in docs]
+                
+                # Update metadata with document ID
+                for meta in metas:
+                    meta['doc_id'] = doc_id
+                    meta['original_name'] = uploaded_file.name
+                
+                ids = [f"doc_{doc_id}_chunk_{j}" for j in range(len(texts))]
+                
+                embs = embedder.embed(texts)
+                vs.add(ids, embs, metas, texts)
+                
+                # Update index status
+                doc_manager.update_index_status(doc_id, True, len(texts))
+                
+            except Exception as e:
+                st.error(f"Error indexing {uploaded_file.name}: {str(e)}")
+                doc_manager.update_index_status(doc_id, False, 0)
+            
+            progress_bar.progress((i + 1) / len(uploaded_files))
+        
+        status_text.text("✅ All files processed!")
+        st.success(f"Successfully uploaded and indexed {len(uploaded_files)} documents!")
 
+def admin_manage_interface():
+    """Admin interface for managing documents"""
+    st.subheader("📋 Document Management")
+    
+    documents = doc_manager.get_all_documents()
+    
+    if not documents:
+        st.info("No documents uploaded yet.")
+        return
+    
+    # Display documents in a table
+    for doc in documents:
+        with st.expander(f"📄 {doc['original_name']} {'✅' if doc['is_indexed'] else '❌'}"):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                st.write(f"**Type:** {doc['file_type'].upper()}")
+                st.write(f"**Size:** {doc['file_size']:,} bytes")
+                st.write(f"**Uploaded by:** {doc['uploaded_by']}")
+                st.write(f"**Date:** {doc['upload_date']}")
+                if doc['description']:
+                    st.write(f"**Description:** {doc['description']}")
+                if doc['is_indexed']:
+                    st.write(f"**Chunks:** {doc['chunk_count']}")
+            
+            with col2:
+                if not doc['is_indexed']:
+                    if st.button(f"🔄 Re-index", key=f"reindex_{doc['id']}"):
+                        try:
+                            file_path = Path(doc['file_path'])
+                            docs = load_and_chunk([file_path], chunk_size, overlap)
+                            texts = [d[0] for d in docs]
+                            metas = [d[1] for d in docs]
+                            
+                            for meta in metas:
+                                meta['doc_id'] = doc['id']
+                                meta['original_name'] = doc['original_name']
+                            
+                            ids = [f"doc_{doc['id']}_chunk_{j}" for j in range(len(texts))]
+                            embs = embedder.embed(texts)
+                            vs.add(ids, embs, metas, texts)
+                            
+                            doc_manager.update_index_status(doc['id'], True, len(texts))
+                            st.success("Document re-indexed!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+            
+            with col3:
+                if st.button(f"🗑️ Delete", key=f"delete_{doc['id']}", type="secondary"):
+                    if doc_manager.delete_document(doc['id']):
+                        st.success("Document deleted!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete document")
+
+def user_documents_interface():
+    """User interface to view available documents"""
+    st.subheader("📄 Available Documents")
+    
+    documents = doc_manager.get_indexed_documents()
+    
+    if not documents:
+        st.info("No documents are currently available. Please contact an administrator.")
+        return
+    
+    st.write(f"**{len(documents)} documents available for chat:**")
+    
+    for doc in documents:
+        with st.container():
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"📄 **{doc['original_name']}**")
+                if doc['description']:
+                    st.caption(doc['description'])
+                st.caption(f"Uploaded: {doc['upload_date']} • {doc['chunk_count']} chunks")
+            with col2:
+                st.write("✅ Ready for chat")
+        st.divider()
+
+def user_chat_interface():
+    """Chat interface for both admin and users"""
+    st.subheader("💬 Chat with Documents")
+    
+    # Document selection for targeted chat
+    documents = doc_manager.get_indexed_documents()
+    
+    if not documents:
+        st.info("No documents available for chat. Upload and index documents first.")
+        return
+    
+    # Document filter
+    doc_options = ["All Documents"] + [doc['original_name'] for doc in documents]
+    selected_doc = st.selectbox("Select document to chat with:", doc_options)
+    
+    query = st.text_input("Ask a question about the documents:", placeholder="What would you like to know?")
+    
+    if st.button("Get Answer", type="primary") and query:
+        with st.spinner("Searching and generating answer..."):
+            generator = Generator(provider=provider_gen)
+            
+            # Retrieve relevant chunks
+            res = retriever.retrieve(query)
+            docs = res.get("documents", [[]])[0]
+            metas = res.get("metadatas", [[]])[0]
+            
+            # Filter by selected document if not "All Documents"
+            if selected_doc != "All Documents":
+                filtered_docs = []
+                filtered_metas = []
+                for doc, meta in zip(docs, metas):
+                    if meta.get('original_name') == selected_doc:
+                        filtered_docs.append(doc)
+                        filtered_metas.append(meta)
+                docs, metas = filtered_docs, filtered_metas
+            
+            if not docs:
+                st.warning("No relevant information found in the selected document(s).")
+                return
+            
+            # Generate answer
+            answer = generator.generate(query, docs, metas)
+            
+            # Display results
+            st.markdown("### 🤖 Answer")
+            st.write(answer)
+            
+            # Show sources
+            with st.expander("📚 Sources"):
+                unique_sources = list(set(meta.get('original_name', 'Unknown') for meta in metas))
+                for source in unique_sources:
+                    st.write(f"• {source}")
+    
+    # Chat history (simple implementation)
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    
+    if st.session_state.chat_history:
+        st.markdown("### 📝 Recent Questions")
+        for i, (q, a) in enumerate(reversed(st.session_state.chat_history[-3:])):
+            with st.expander(f"Q: {q[:50]}..."):
+                st.write(f"**Q:** {q}")
+                st.write(f"**A:** {a}")
+    
+    # Store in history when answer is generated
+    if 'answer' in locals() and query:
+        st.session_state.chat_history.append((query, answer))
+
+
+# =========================
+# Main UI Logic
+# =========================
+if st.session_state.user_role == "admin":
+    # Admin Interface
+    tab_upload, tab_manage, tab_chat = st.tabs(["📤 Upload Documents", "📋 Manage Documents", "💬 Chat"])
+    
+    with tab_upload:
+        admin_upload_interface()
+    
+    with tab_manage:
+        admin_manage_interface()
+    
+    with tab_chat:
+        user_chat_interface()
+
+else:
+    # User Interface
+    tab_docs, tab_chat = st.tabs(["📄 Available Documents", "💬 Chat with Documents"])
+    
+    with tab_docs:
+        user_documents_interface()
+    
+    with tab_chat:
+        user_chat_interface()

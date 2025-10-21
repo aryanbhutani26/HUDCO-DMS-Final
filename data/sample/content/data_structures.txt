@@ -1,0 +1,36 @@
+
+# Python Data Structures
+
+Python provides several built-in data structures to store and organize data.
+
+## Lists:
+Ordered, mutable collections of items.
+```python
+fruits = ["apple", "banana", "orange"]
+fruits.append("grape")
+```
+
+## Dictionaries:
+Key-value pairs for mapping relationships.
+```python
+student = {
+    "name": "John",
+    "age": 20,
+    "grade": "A"
+}
+```
+
+## Tuples:
+Ordered, immutable collections.
+```python
+coordinates = (10, 20)
+```
+
+## Sets:
+Unordered collections of unique items.
+```python
+unique_numbers = {1, 2, 3, 4, 5}
+```
+
+Each data structure has specific use cases and methods for manipulation.
+        
